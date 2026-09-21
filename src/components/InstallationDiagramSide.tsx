@@ -77,6 +77,13 @@ export default function InstallationDiagramSide({
   const mountX = faucetMountYMm != null ? toX(-faucetMountYMm) : null
   const spoutTopY = spoutHeightMm != null ? toY(spoutHeightMm) : null
   const landingX = landingYMm != null ? toX(landingYMm) : null
+  // Outlet position with NO jet-angle drift — i.e. faucetMountYMm and
+  // spoutProjectionMm alone (see §2 of docs/engineering-model.md). The
+  // static riser+reach up to here never moves as the angle changes; only
+  // the segment from here to `landingX` (which does include the drift)
+  // should visually tilt — see the jet path rendering below.
+  const nominalOutletX =
+    spoutProjectionMm != null && faucetMountYMm != null ? toX(spoutProjectionMm - faucetMountYMm) : null
 
   const clearanceColor = verdictColor[clearanceVerdict]
   const jetColor = verdictColor[geometryVerdict]
@@ -135,12 +142,17 @@ export default function InstallationDiagramSide({
         <line x1={rearX - 30} y1={rimY} x2={frontX + 10} y2={rimY} stroke={clearanceColor} strokeWidth={1.5} strokeDasharray="5 3" opacity={0.7} />
       )}
 
-      {/* faucet riser + spout + drop */}
+      {/* faucet riser + static reach (solid, fixed by the catalog spec) +
+          angled jet (dashed — this segment's slope is the actual
+          jetAngleDeg the user set; drop straight down when 0°) */}
       {mountX != null && spoutTopY != null && (
         <g stroke={jetColor} strokeWidth={3} fill="none" strokeLinecap="round">
           <line x1={mountX} y1={counterY} x2={mountX} y2={spoutTopY} />
-          {landingX != null && <path d={`M ${mountX} ${spoutTopY} L ${landingX} ${spoutTopY}`} />}
-          {landingX != null && <line x1={landingX} y1={spoutTopY} x2={landingX} y2={bottomY} strokeDasharray="2 4" />}
+          {nominalOutletX != null && <line x1={mountX} y1={spoutTopY} x2={nominalOutletX} y2={spoutTopY} />}
+          {nominalOutletX != null && landingX != null && (
+            <line x1={nominalOutletX} y1={spoutTopY} x2={landingX} y2={counterY} strokeDasharray="6 4" />
+          )}
+          {landingX != null && <line x1={landingX} y1={counterY} x2={landingX} y2={bottomY} strokeDasharray="2 4" opacity={0.5} />}
           <circle cx={mountX} cy={counterY} r={5} fill="#2563eb" stroke="none" />
         </g>
       )}
@@ -207,8 +219,8 @@ export default function InstallationDiagramSide({
         передній край
       </text>
 
-      {spoutProjectionMm != null && mountX != null && landingX != null && spoutTopY != null && (
-        <text x={(mountX + landingX) / 2} y={spoutTopY - 8} textAnchor="middle" fontSize={10} className="fill-slate-400">
+      {spoutProjectionMm != null && mountX != null && nominalOutletX != null && spoutTopY != null && (
+        <text x={(mountX + nominalOutletX) / 2} y={spoutTopY - 8} textAnchor="middle" fontSize={10} className="fill-slate-400">
           виліт {spoutProjectionMm} мм
         </text>
       )}

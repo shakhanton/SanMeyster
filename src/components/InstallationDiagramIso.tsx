@@ -36,6 +36,11 @@ export default function InstallationDiagramIso({
   const drainY = D * 0.5
   const mountY = faucetMountYMm != null ? -faucetMountYMm : null
   const landingY = landingYMm
+  // Outlet position with no jet-angle drift (see InstallationDiagramSide.tsx
+  // for the full rationale) — the static riser+reach up to here is fixed by
+  // the catalog spec; only the segment from here to `landingY` tilts with
+  // the user-set angle.
+  const nominalOutletY = spoutProjectionMm != null && faucetMountYMm != null ? spoutProjectionMm - faucetMountYMm : null
 
   const layout = useMemo(() => {
     const rawProject = (x: number, y: number, z: number) => {
@@ -57,9 +62,12 @@ export default function InstallationDiagramIso({
     ]
     if (mountY != null) {
       points.push(rawProject(centerX, mountY, 0))
-      if (spoutHeightMm != null) points.push(rawProject(centerX, mountY, spoutHeightMm))
+      if (spoutHeightMm != null) {
+        points.push(rawProject(centerX, mountY, spoutHeightMm))
+        if (nominalOutletY != null) points.push(rawProject(centerX, nominalOutletY, spoutHeightMm))
+      }
     }
-    if (landingY != null) points.push(rawProject(centerX, landingY, -H * 0.35))
+    if (landingY != null) points.push(rawProject(centerX, landingY, 0), rawProject(centerX, landingY, -H * 0.35))
 
     const minSx = Math.min(...points.map((p) => p[0]))
     const maxSx = Math.max(...points.map((p) => p[0]))
@@ -80,7 +88,7 @@ export default function InstallationDiagramIso({
 
     return { project }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [W, D, H, centerX, drainY, mountY, spoutHeightMm, landingY])
+  }, [W, D, H, centerX, drainY, mountY, spoutHeightMm, landingY, nominalOutletY])
 
   const { project } = layout
   const p = (x: number, y: number, z: number) => project(x, y, z).join(',')
@@ -94,6 +102,9 @@ export default function InstallationDiagramIso({
   const [drainSx, drainSy] = project(centerX, drainY, -H)
   const [mountSx, mountSy] = mountY != null ? project(centerX, mountY, 0) : [null, null]
   const [spoutTopSx, spoutTopSy] = mountY != null && spoutHeightMm != null ? project(centerX, mountY, spoutHeightMm) : [null, null]
+  const [nominalOutletSx, nominalOutletSy] =
+    nominalOutletY != null && spoutHeightMm != null ? project(centerX, nominalOutletY, spoutHeightMm) : [null, null]
+  const [rimCrossSx, rimCrossSy] = landingY != null ? project(centerX, landingY, 0) : [null, null]
   const [landingSx, landingSy] = landingY != null ? project(centerX, landingY, -H * 0.35) : [null, null]
 
   // Countertop plane: basin footprint plus margin, extended backward to
@@ -141,11 +152,21 @@ export default function InstallationDiagramIso({
         </text>
       </g>
 
-      {/* faucet riser + spout + landing */}
+      {/* faucet riser + static reach (solid, fixed by the catalog spec) +
+          angled jet (dashed — its slope is the actual jetAngleDeg the user
+          set; straight down when 0°) — see InstallationDiagramSide.tsx */}
       {mountSx != null && mountSy != null && spoutTopSx != null && spoutTopSy != null && (
         <g stroke={color} strokeWidth={3} fill="none" strokeLinecap="round">
           <line x1={mountSx} y1={mountSy} x2={spoutTopSx} y2={spoutTopSy} />
-          {landingSx != null && landingSy != null && <path d={`M ${spoutTopSx} ${spoutTopSy} Q ${landingSx} ${spoutTopSy} ${landingSx} ${landingSy}`} />}
+          {nominalOutletSx != null && nominalOutletSy != null && (
+            <line x1={spoutTopSx} y1={spoutTopSy} x2={nominalOutletSx} y2={nominalOutletSy} />
+          )}
+          {nominalOutletSx != null && nominalOutletSy != null && rimCrossSx != null && rimCrossSy != null && (
+            <line x1={nominalOutletSx} y1={nominalOutletSy} x2={rimCrossSx} y2={rimCrossSy} strokeDasharray="6 4" />
+          )}
+          {rimCrossSx != null && rimCrossSy != null && landingSx != null && landingSy != null && (
+            <line x1={rimCrossSx} y1={rimCrossSy} x2={landingSx} y2={landingSy} strokeDasharray="2 4" opacity={0.5} />
+          )}
           <circle cx={mountSx} cy={mountSy} r={5} fill="#2563eb" stroke="none" />
         </g>
       )}
