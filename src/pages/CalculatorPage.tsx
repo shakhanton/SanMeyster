@@ -233,6 +233,8 @@ function CalculatorResult({
     <section className="space-y-4">
       <div className="bg-white border border-slate-200 rounded-lg p-4">
         <InstallationDiagram
+          basinWidthMm={basin.width?.value ?? null}
+          bowlWidthMm={basin.bowlWidth?.value ?? null}
           bowlDepthMm={bowlDepthMm}
           bowlHeightMm={basin.bowlHeight?.value ?? null}
           faucetMountYMm={faucetMountY}
