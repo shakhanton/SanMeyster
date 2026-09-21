@@ -19,7 +19,9 @@ export interface CalculatorInput {
   /** User-supplied: distance from the basin's rear edge to the faucet mount, mm.
    *  No catalog entry currently has this field (research gap) — always user input. */
   faucetMountYMm: number | null
-  /** User-supplied installation height override, mm. Falls back to basin.height if omitted. */
+  /** User-supplied mounting height above finished floor, mm. This is an installation
+   *  decision, not a product spec — it is NOT the same quantity as `basin.height`
+   *  (the basin's own physical rim-to-base dimension) and must never fall back to it. */
   installedBasinHeightMm: number | null
 }
 
@@ -70,7 +72,7 @@ export function calculate(input: CalculatorInput): CalculatorResult {
   const targetZone = computeTargetZone(bowlDepthMm)
   const ergonomics = evaluateErgonomics(landingYMm, targetZone, spoutHeightMm)
 
-  const basinHeightMm = input.installedBasinHeightMm ?? basin.height?.value ?? null
+  const basinHeightMm = input.installedBasinHeightMm
   const faucetFrontDistanceMm =
     outerDepthMm != null && faucetMountYMm != null ? outerDepthMm - faucetMountYMm : null
   const standardsResult = evaluateStandards(jurisdiction, input.accessible, basinHeightMm, faucetFrontDistanceMm)
@@ -85,7 +87,7 @@ export function calculate(input: CalculatorInput): CalculatorResult {
   if (faucet.spoutHeight?.confidence === 'C' || faucet.spoutProjection?.confidence === 'C') {
     caveats.push('Характеристики змішувача мають знижену довіру (джерело не першоджерело виробника).')
   }
-  if (input.installedBasinHeightMm == null && !basin.height) caveats.push('Висота встановлення раковини невідома.')
+  if (input.installedBasinHeightMm == null) caveats.push('Висота встановлення раковини не вказана.')
   const dataQuality: DataQualityResult = { verdict: caveats.length > 0 ? 'warning' : 'ok', caveats }
 
   const explanation: ExplanationEntry[] = []
