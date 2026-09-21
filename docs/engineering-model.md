@@ -38,6 +38,16 @@ bowl starts. This is a declared simplification: real countertop basins often
 have a flat deck strip behind the bowl, but its width was not published for
 any cataloged model, so the model would have to invent it to represent it.
 
+Because of this, the diagrams draw **one** basin rectangle — outer width ×
+whichever depth the calculation is actually using (bowl depth if the
+catalog has it, else outer depth) — not two. An earlier version also drew a
+second, smaller dashed rectangle inside it captioned "bowl boundaries
+unknown," sized by an arbitrary 70%/84% shrink with no source and no
+relationship to the real containment check. That was actively misleading —
+it made the *known* outer boundary look uncertain by putting an "unknown"
+label next to a fake shape beside it. Removed; see
+`src/components/InstallationDiagramPlan.tsx`.
+
 ## 2. Physics of the jet — and what the model deliberately does not claim
 
 The research (`docs/ergonomics-and-standards.md` §11) confirms **no

@@ -17,7 +17,6 @@ const WALL_STRIP = 22
  */
 export default function InstallationDiagramPlan({
   basinWidthMm,
-  bowlWidthMm,
   bowlDepthMm,
   faucetMountYMm,
   spoutProjectionMm,
@@ -43,18 +42,13 @@ export default function InstallationDiagramPlan({
     return { widthMm, depthMm, scale, originX, originY, toX, toY }
   }, [basinWidthMm, bowlDepthMm, landingYMm])
 
-  const { widthMm, depthMm, scale, toX, toY } = layout
+  const { widthMm, depthMm, toX, toY } = layout
 
   const left = toX(0)
   const right = toX(widthMm)
   const rearY = toY(0)
   const frontY = toY(depthMm)
   const centerX = toX(widthMm / 2)
-
-  const bowlW = bowlWidthMm != null ? bowlWidthMm * scale : (right - left) * 0.7
-  const bowlLeft = centerX - bowlW / 2
-  const bowlRight = centerX + bowlW / 2
-  const bowlKnown = bowlWidthMm != null
 
   const mountY = faucetMountYMm != null ? toY(faucetMountYMm) : null
   const landingY = landingYMm != null ? toY(landingYMm) : null
@@ -84,31 +78,22 @@ export default function InstallationDiagramPlan({
         </text>
       </g>
 
-      {/* basin outer footprint */}
+      {/*
+        Single basin rectangle — outer width × the depth actually used for
+        containment (bowl depth when the catalog has it, else the outer
+        footprint depth; see calculate() in src/calculator/calculator.ts).
+        Earlier versions also drew a second, smaller dashed rectangle
+        labeled "bowl boundaries unknown, shown approximately" — that inner
+        box was an arbitrary 70%/84% shrink with no source and no relation
+        to what's actually computed, which just confused readers into
+        thinking the real (known) outer boundary was the uncertain one.
+        Removed; see docs/engineering-model.md §1.
+      */}
       <rect x={left} y={rearY} width={right - left} height={frontY - rearY} rx={12} fill="#f8fafc" stroke="currentColor" strokeWidth={2.5} className="text-slate-400" />
-
-      {/* bowl interior */}
-      <rect
-        x={bowlLeft}
-        y={rearY + (frontY - rearY) * 0.08}
-        width={bowlRight - bowlLeft}
-        height={(frontY - rearY) * 0.84}
-        rx={10}
-        fill="#fff"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeDasharray={bowlKnown ? undefined : '4 3'}
-        className="text-slate-300"
-      />
-      {!bowlKnown && (
-        <text x={centerX} y={frontY - 10} textAnchor="middle" fontSize={10} className="fill-slate-400">
-          межі чаші невідомі — показано орієнтовно
-        </text>
-      )}
 
       {/* target zone */}
       {zoneMinY != null && zoneMaxY != null && (
-        <rect x={bowlLeft} y={zoneMinY} width={bowlRight - bowlLeft} height={zoneMaxY - zoneMinY} fill="#22c55e" opacity={0.18} />
+        <rect x={left} y={zoneMinY} width={right - left} height={zoneMaxY - zoneMinY} fill="#22c55e" opacity={0.18} />
       )}
 
       {/* drain marker */}
