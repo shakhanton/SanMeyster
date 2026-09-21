@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SanMeyster</title>
+    <script>
+      // GitHub Pages has no server-side router, so a deep link 404s here.
+      // Store the intended path and bounce to the SPA root; index.html
+      // restores it via history.replaceState before React mounts.
+      sessionStorage.redirect = location.href
+    </script>
+    <meta http-equiv="refresh" content="0; url=/SanMeyster/" />
+  </head>
+  <body></body>
+</html>

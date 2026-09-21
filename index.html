@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SanMeyster — розрахунок встановлення раковини та змішувача</title>
+    <script>
+      // GitHub Pages SPA routing fallback: 404.html stores the intended
+      // path in sessionStorage and redirects to the app root, then this
+      // script restores it via history.replaceState before React mounts.
+      ;(function () {
+        var redirect = sessionStorage.redirect
+        delete sessionStorage.redirect
+        if (redirect && redirect !== location.href) {
+          history.replaceState(null, '', redirect)
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
