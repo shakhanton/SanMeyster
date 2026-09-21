@@ -4,7 +4,14 @@
  * does NOT combine them into a single score.
  */
 import type { Basin, Faucet, Jurisdiction } from '../data/types'
-import { computeLandingPoint, evaluateGeometry, type GeometryResult, type Verdict } from '../geometry/geometry'
+import {
+  computeLandingPoint,
+  evaluateGeometry,
+  evaluateRimClearance,
+  type ClearanceResult,
+  type GeometryResult,
+  type Verdict,
+} from '../geometry/geometry'
 import { computeTargetZone, evaluateErgonomics, type ErgonomicsResult, type TargetZone } from '../ergonomics/ergonomics'
 import { evaluateStandards, type StandardCheckResult } from '../standards/standards'
 
@@ -30,6 +37,10 @@ export interface CalculatorInput {
   basinDepthOverrideMm?: number | null
   spoutProjectionOverrideMm?: number | null
   spoutHeightOverrideMm?: number | null
+  /** The basin's own physical height (rim above its base/the mounting
+   *  surface) — NOT installedBasinHeightMm (floor-to-rim). Used only for
+   *  the rim-clearance check below. */
+  basinRimHeightOverrideMm?: number | null
   /** Jet exit angle from vertical, degrees. Always user-supplied — no
    *  researched source publishes this for any faucet. Defaults to 0
    *  (straight down). See src/geometry/geometry.ts computeLandingPoint. */
@@ -56,12 +67,27 @@ export interface ExplanationEntry {
 export interface CalculatorResult {
   landingYMm: number | null
   targetZone: TargetZone
+  /** Combined geometry axis: horizontal containment (evaluateGeometry) AND
+   *  vertical rim clearance (evaluateRimClearance) merged — worst verdict,
+   *  concatenated messages. Both checks answer the same question ("does the
+   *  water physically get into the bowl?"), just on different axes. */
   geometry: GeometryResult
+  /** The vertical rim-clearance check on its own, for callers (the side
+   *  elevation diagram, the explanation panel) that need it un-merged. */
+  clearance: ClearanceResult
+  /** The rim height actually compared against in the clearance check
+   *  (resolved for installation type — see calculate()), for diagrams. */
+  resolvedRimHeightMm: number | null
   ergonomics: ErgonomicsResult
   standards: StandardCheckResult
   manufacturer: ManufacturerResult
   dataQuality: DataQualityResult
   explanation: ExplanationEntry[]
+}
+
+const VERDICT_SEVERITY: Record<Verdict, number> = { fail: 0, warning: 1, unknown: 2, ok: 3 }
+function worstVerdict(a: Verdict, b: Verdict): Verdict {
+  return VERDICT_SEVERITY[a] <= VERDICT_SEVERITY[b] ? a : b
 }
 
 export function calculate(input: CalculatorInput): CalculatorResult {
@@ -79,21 +105,46 @@ export function calculate(input: CalculatorInput): CalculatorResult {
   const jetAngleDeg = input.jetAngleDeg ?? 0
   const faucetMountYMm = input.faucetMountYMm
 
-  const geometry = evaluateGeometry({
+  const horizontalGeometry = evaluateGeometry({
     bowlDepthMm,
     faucetMountYMm,
     spoutProjectionMm,
     spoutHeightMm,
     jetAngleDeg,
   })
-  const landingYMm = geometry.landing.yMm
+  const landingYMm = horizontalGeometry.landing.yMm
+
+  // Rim height above the surface the faucet is mounted on — NOT the same
+  // quantity as installedBasinHeightMm (floor-to-rim). One user-editable
+  // number, always: 0 means the rim sits flush/recessed with the counter
+  // (the natural case for inset/undermount), a positive value means the
+  // basin sits that far above it (countertop/furniture, using the basin's
+  // own height as the catalog default). Never hardcoded by installation
+  // type — the user can always correct it (a "semi-inset" bowl, etc.). A
+  // wall-mounted basin has no shared mounting surface with the faucet at
+  // all, so the check doesn't apply there regardless of this value.
+  const resolvedRimHeightMm = input.basinRimHeightOverrideMm ?? basin.height?.value ?? null
+  const clearance =
+    basin.installationType === 'wall-mounted'
+      ? { verdict: 'unknown' as const, message: 'Перевірка вертикального зазору не застосовується до настінного встановлення — немає спільної стільниці зі змішувачем.' }
+      : evaluateRimClearance(spoutHeightMm, resolvedRimHeightMm)
+
+  const geometry: GeometryResult = {
+    ...horizontalGeometry,
+    verdict: worstVerdict(horizontalGeometry.verdict, clearance.verdict),
+    message: clearance.verdict === 'unknown' ? horizontalGeometry.message : `${horizontalGeometry.message} ${clearance.message}`,
+  }
 
   const targetZone = computeTargetZone(bowlDepthMm)
   const ergonomics = evaluateErgonomics(landingYMm, targetZone, spoutHeightMm)
 
   const basinHeightMm = input.installedBasinHeightMm
+  // The faucet mounts behind the rear edge (toward the wall), not inside
+  // the basin (see src/geometry/geometry.ts), so its distance from the
+  // FRONT edge — what the ДБН/DIN accessibility rules actually measure —
+  // is the basin's own depth plus that gap behind it, not minus.
   const faucetFrontDistanceMm =
-    outerDepthMm != null && faucetMountYMm != null ? outerDepthMm - faucetMountYMm : null
+    outerDepthMm != null && faucetMountYMm != null ? outerDepthMm + faucetMountYMm : null
   const standardsResult = evaluateStandards(jurisdiction, input.accessible, basinHeightMm, faucetFrontDistanceMm)
 
   const manufacturer: ManufacturerResult = faucet.recommendedBasinModels?.includes(basin.id)
@@ -103,6 +154,7 @@ export function calculate(input: CalculatorInput): CalculatorResult {
   const depthOverridden = input.basinDepthOverrideMm != null && input.basinDepthOverrideMm !== basin.depth?.value
   const projectionOverridden = input.spoutProjectionOverrideMm != null && input.spoutProjectionOverrideMm !== faucet.spoutProjection?.value
   const heightOverridden = input.spoutHeightOverrideMm != null && input.spoutHeightOverrideMm !== faucet.spoutHeight?.value
+  const rimHeightOverridden = input.basinRimHeightOverrideMm != null && input.basinRimHeightOverrideMm !== basin.height?.value
 
   const caveats: string[] = []
   if (!basin.bowlDepth) caveats.push('Глибина чаші невідома — використано зовнішню глибину раковини як наближення.')
@@ -111,8 +163,11 @@ export function calculate(input: CalculatorInput): CalculatorResult {
     caveats.push('Характеристики змішувача мають знижену довіру (джерело не першоджерело виробника).')
   }
   if (input.installedBasinHeightMm == null) caveats.push('Висота встановлення раковини не вказана.')
-  if (depthOverridden || projectionOverridden || heightOverridden) {
+  if (depthOverridden || projectionOverridden || heightOverridden || rimHeightOverridden) {
     caveats.push('Одна чи більше характеристик відредаговані вручну та відрізняються від каталожних значень.')
+  }
+  if (clearance.verdict === 'unknown' && basin.installationType !== 'wall-mounted') {
+    caveats.push('Невідома висота раковини — неможливо перевірити, чи вистачає висоти виливу, щоб перекрити борт.')
   }
   if (jetAngleDeg !== 0) {
     caveats.push('Кут струменя — це введене користувачем припущення (heuristic), жоден виробник його не публікує.')
@@ -152,6 +207,18 @@ export function calculate(input: CalculatorInput): CalculatorResult {
       sourceUrl: null,
     })
   }
+  if (basin.installationType !== 'wall-mounted' && resolvedRimHeightMm != null) {
+    explanation.push({
+      label: 'Висота раковини (борт над стільницею)',
+      value: rimHeightOverridden
+        ? `${resolvedRimHeightMm} мм (відредаговано користувачем)`
+        : basin.height
+          ? `${basin.height.value} мм`
+          : `${resolvedRimHeightMm} мм (0 = врівень зі стільницею)`,
+      source: rimHeightOverridden ? 'Введено користувачем' : (basin.height?.source ?? null),
+      sourceUrl: rimHeightOverridden ? null : (basin.height?.sourceUrl ?? null),
+    })
+  }
   for (const check of standardsResult.checks) {
     explanation.push({
       label: check.rule.parameter,
@@ -165,6 +232,8 @@ export function calculate(input: CalculatorInput): CalculatorResult {
     landingYMm,
     targetZone,
     geometry,
+    clearance,
+    resolvedRimHeightMm,
     ergonomics,
     standards: standardsResult,
     manufacturer,

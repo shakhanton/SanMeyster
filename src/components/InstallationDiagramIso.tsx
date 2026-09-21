@@ -3,6 +3,7 @@ import { type DiagramData, SCHEMATIC_BOWL_HEIGHT_MM, verdictColor } from './diag
 
 const VIEW_W = 640
 const VIEW_H = 520
+const MARGIN = 50
 const COS30 = Math.cos(Math.PI / 6)
 const SIN30 = Math.sin(Math.PI / 6)
 
@@ -10,6 +11,12 @@ const SIN30 = Math.sin(Math.PI / 6)
  * Simple isometric "open box" rendering of the basin: bottom face + the two
  * near interior walls, rim drawn as an outline so the inside (drain, landing
  * point) stays visible. Gives spatial intuition without a real 3D engine.
+ *
+ * The faucet is mounted BEHIND the basin's rear edge (toward the wall, Y<0)
+ * — see src/geometry/geometry.ts — not inside its footprint, so the
+ * projection's bounding box is fit from the actual set of rendered points
+ * (basin + faucet + landing) rather than a fixed formula, since the faucet
+ * setback is user-adjustable and can extend well behind the basin.
  */
 export default function InstallationDiagramIso({
   basinWidthMm,
@@ -22,37 +29,61 @@ export default function InstallationDiagramIso({
   landingYMm,
   geometryVerdict,
 }: DiagramData) {
-  const model = useMemo(() => {
-    const W = Math.max(bowlWidthMm ?? basinWidthMm ?? 500, 250)
-    const D = Math.max(bowlDepthMm ?? 400, landingYMm ?? 0, 200)
-    const H = bowlHeightMm ?? SCHEMATIC_BOWL_HEIGHT_MM
+  const W = Math.max(bowlWidthMm ?? basinWidthMm ?? 500, 250)
+  const D = Math.max(bowlDepthMm ?? 400, 200)
+  const H = bowlHeightMm ?? SCHEMATIC_BOWL_HEIGHT_MM
+  const centerX = W / 2
+  const drainY = D * 0.5
+  const mountY = faucetMountYMm != null ? -faucetMountYMm : null
+  const landingY = landingYMm
 
-    // Fit the projected bounding box into the viewport.
-    const rawSpan = (W + D) * COS30
-    const rawHeight = (W + D) * SIN30 + H + (spoutHeightMm ?? 150) + 60
-    const scale = Math.min((VIEW_W - 80) / rawSpan, (VIEW_H - 100) / rawHeight)
-
-    const originX = VIEW_W / 2
-    const originY = 90 + (spoutHeightMm ?? 150) * scale
-
-    const project = (x: number, y: number, z: number) => {
-      const sx = (x - y) * COS30 * scale
-      const sy = (x + y) * SIN30 * scale - z * scale
-      return [originX + sx, originY + sy] as const
+  const layout = useMemo(() => {
+    const rawProject = (x: number, y: number, z: number) => {
+      const sx = (x - y) * COS30
+      const sy = (x + y) * SIN30 - z
+      return [sx, sy] as const
     }
 
-    return { W, D, H, scale, project }
-  }, [basinWidthMm, bowlWidthMm, bowlDepthMm, bowlHeightMm, spoutHeightMm, landingYMm])
+    const points: Array<readonly [number, number]> = [
+      rawProject(0, 0, 0),
+      rawProject(W, 0, 0),
+      rawProject(W, D, 0),
+      rawProject(0, D, 0),
+      rawProject(0, 0, -H),
+      rawProject(W, 0, -H),
+      rawProject(W, D, -H),
+      rawProject(0, D, -H),
+      rawProject(centerX, drainY, -H),
+    ]
+    if (mountY != null) {
+      points.push(rawProject(centerX, mountY, 0))
+      if (spoutHeightMm != null) points.push(rawProject(centerX, mountY, spoutHeightMm))
+    }
+    if (landingY != null) points.push(rawProject(centerX, landingY, -H * 0.35))
 
-  const { W, D, H, project } = model
+    const minSx = Math.min(...points.map((p) => p[0]))
+    const maxSx = Math.max(...points.map((p) => p[0]))
+    const minSy = Math.min(...points.map((p) => p[1]))
+    const maxSy = Math.max(...points.map((p) => p[1]))
+
+    const boxW = Math.max(maxSx - minSx, 1)
+    const boxH = Math.max(maxSy - minSy, 1)
+    const scale = Math.min((VIEW_W - MARGIN * 2) / boxW, (VIEW_H - MARGIN * 2) / boxH)
+
+    const originX = VIEW_W / 2 - ((minSx + maxSx) / 2) * scale
+    const originY = VIEW_H / 2 - ((minSy + maxSy) / 2) * scale
+
+    const project = (x: number, y: number, z: number) => {
+      const [sx, sy] = rawProject(x, y, z)
+      return [originX + sx * scale, originY + sy * scale] as const
+    }
+
+    return { project }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [W, D, H, centerX, drainY, mountY, spoutHeightMm, landingY])
+
+  const { project } = layout
   const p = (x: number, y: number, z: number) => project(x, y, z).join(',')
-
-  const centerX = W / 2
-  // Drain position is unknown for every catalog model — shown centered
-  // (most wash basins have a center drain), dashed, labeled as unverified.
-  const drainY = D * 0.5
-  const mountY = faucetMountYMm
-  const landingY = landingYMm
   const color = verdictColor[geometryVerdict]
 
   const bottomFace = [p(0, 0, -H), p(W, 0, -H), p(W, D, -H), p(0, D, -H)].join(' ')
@@ -65,6 +96,10 @@ export default function InstallationDiagramIso({
   const [spoutTopSx, spoutTopSy] = mountY != null && spoutHeightMm != null ? project(centerX, mountY, spoutHeightMm) : [null, null]
   const [landingSx, landingSy] = landingY != null ? project(centerX, landingY, -H * 0.35) : [null, null]
 
+  // Countertop plane: basin footprint plus margin, extended backward to
+  // cover wherever the faucet actually sits.
+  const backY = Math.min(-30, (mountY ?? 0) - 30)
+
   return (
     <svg
       viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
@@ -72,18 +107,26 @@ export default function InstallationDiagramIso({
       aria-label="Ізометрична схема встановлення раковини та змішувача"
       className="w-full h-auto"
     >
-      {/* countertop plane, slightly larger than the basin footprint */}
+      {/* countertop plane — same tone as the plan/side views, distinct from the basin */}
       <polygon
-        points={[project(-40, -30, 0), project(W + 40, -30, 0), project(W + 40, D + 20, 0), project(-40, D + 20, 0)].map((pt) => pt.join(',')).join(' ')}
-        fill="#f1f5f9"
-        stroke="#e2e8f0"
+        points={[project(-40, backY, 0), project(W + 40, backY, 0), project(W + 40, D + 20, 0), project(-40, D + 20, 0)].map((pt) => pt.join(',')).join(' ')}
+        fill="#d8dee6"
+        stroke="#94a3b8"
       />
+      {(() => {
+        const [lx, ly] = project(W * 0.05, backY + 15, 0)
+        return (
+          <text x={lx} y={ly} fontSize={10} fontWeight={600} className="fill-slate-600">
+            стільниця
+          </text>
+        )
+      })()}
 
       {/* bowl bottom (floor) */}
-      <polygon points={bottomFace} fill="#f8fafc" stroke="currentColor" strokeWidth={1.5} className="text-slate-300" />
+      <polygon points={bottomFace} fill="#eff6ff" stroke="currentColor" strokeWidth={1.5} className="text-slate-400" />
       {/* interior walls */}
-      <polygon points={frontWall} fill="#eef2f7" stroke="currentColor" strokeWidth={1.5} className="text-slate-300" />
-      <polygon points={rightWall} fill="#e4e9f0" stroke="currentColor" strokeWidth={1.5} className="text-slate-300" />
+      <polygon points={frontWall} fill="#e4edfa" stroke="currentColor" strokeWidth={1.5} className="text-slate-400" />
+      <polygon points={rightWall} fill="#dbe6f5" stroke="currentColor" strokeWidth={1.5} className="text-slate-400" />
       {/* rim outline */}
       <polygon points={rimOutline} fill="none" stroke="currentColor" strokeWidth={2.5} className="text-slate-500" />
 

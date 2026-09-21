@@ -8,29 +8,50 @@
 
 ## 1. Coordinate system
 
-A basin is modeled in a 2D vertical cross-section (the "side profile" the SVG
-renders), origin at the **rear-top edge of the basin, at the rim**:
+The basin and faucet are modeled in a coordinate frame anchored at the
+**basin's rear-top edge, at the rim**:
 
 - **Y axis** — depth, 0 at the rear edge, increasing toward the front edge.
   `basin.depth` is the outer footprint depth; the bowl's usable interior
   (`bowlDepth`) is smaller and, per the research, unknown for nearly every
   cataloged model — treated as `null` unless the catalog entry has it.
-- **Z axis** — height, 0 at the rim, increasing downward into the bowl (so a
-  bowl bottom is at `+bowlHeight` if known) and increasing upward above the
-  rim for the faucet body.
-- **X axis** (width) is not modeled in the 2D cross-section — the app assumes
-  the faucet is mounted on the basin's width centerline, since no research
-  source or catalog entry gave an off-center tap-hole position. This is a
-  declared simplification, not a hidden one.
+- **Z axis** — height above the surface the faucet is mounted on (the
+  countertop), increasing upward.
+- **X axis** (width) is not modeled — the app assumes the faucet is mounted
+  on the basin's width centerline, since no research source or catalog
+  entry gave an off-center tap-hole position. A declared simplification,
+  not a hidden one.
 
-The faucet is anchored at the **mounting surface**, which for a deck-mounted
-faucet is taken as level with the basin rim (Z=0) at whatever Y-position the
-tap hole sits — `faucetHolePosition` (distance from rear edge) when the
-catalog knows it. No catalog entry currently has this field (§11 of the
-research), so the calculator requires the user to input it directly (a
-slider, defaulted to Y=0 purely as an interactive starting position, not as
-a claimed typical value — there is no sourced "typical faucet-to-rear-edge
-distance" to default to, per the research gap).
+**The faucet mounts on the WALL side of the rear edge, not inside the
+basin.** This was wrong in an earlier version of this model, which placed
+`faucetMountY` as a positive offset *into* the basin, and is worth stating
+plainly because it inverts the geometry: a deck-mounted faucet for a
+lay-on/countertop basin sits on the counter *behind* the bowl it serves —
+between the basin and the wall — not on the bowl's own footprint. So
+`faucetMountYMm` (distance from the rear edge to the faucet mount, always
+user-supplied — no catalog entry has `faucetHolePosition`, per the research
+gap) places the mount at **Y = −faucetMountYMm**, and the outlet — which
+sits `spoutProjectionMm` further forward — ends up at:
+
+```
+outletY = spoutProjectionMm − faucetMountYMm
+```
+
+A larger setback therefore makes the basin *harder* to reach, not easier —
+matching the physical reality that a faucet mounted further from the basin
+needs more spout reach just to clear the rear edge at all before any of
+that reach can land water inside the bowl. See §2 for how this feeds the
+landing-point formula, and `src/geometry/geometry.ts` for the code.
+
+The countertop itself is drawn in the diagrams as a distinct object from
+the basin — not merely a reference line — because at a glance it needs to
+be obvious which shape is "the table" and which is "the sink." Whether the
+countertop continues *under* the basin (a lay-on vessel resting on top) or
+stops at the basin's footprint with a cutout (an inset/undermount bowl
+recessed into it) is derived directly from the rim-height value in §2.1 —
+positive means resting on top, ≤0 means flush/recessed — rather than from
+the basin's `installationType` label, since that value is now the single
+place this distinction is made (see §2.1).
 
 The bowl interior is assumed to span `Y=0` (rear rim) to `Y=bowlDepth` (or
 `Y=depth` when `bowlDepth` is unknown) — i.e. no rear deck offset before the
@@ -68,11 +89,12 @@ stated explicitly wherever it's used in the UI:
 > parameter). The model therefore treats the landing point's horizontal
 > position as equal to the outlet's horizontal position:
 >
-> `landingY = faucetMountY + spoutProjection`
+> `landingY = spoutProjection − faucetMountY`
 >
-> This is a geometric placement, not a projectile-motion integration — there
-> is no `t = sqrt(2h/g)` step, because there is no sourced horizontal
-> velocity to multiply it by.
+> (mount is at Y = −faucetMountY per §1, outlet is spoutProjection further
+> forward.) This is a geometric placement, not a projectile-motion
+> integration — there is no `t = sqrt(2h/g)` step, because there is no
+> sourced horizontal velocity to multiply it by.
 
 The vertical **drop height** (`spoutHeight`, sourced per-model from hansgrohe
 directly and GROHE at lower confidence) still matters ergonomically even
@@ -95,13 +117,54 @@ idealization**, not a CFD simulation.
 input (`jetAngleDeg`, degrees from vertical, default 0°) so a user who knows
 their actual fixture leans off-vertical can explore that what-if. It extends
 Assumption A with a straight-line drift term:
-`landingY = faucetMountY + spoutProjection + spoutHeight × tan(angle)`. This
+`landingY = spoutProjection − faucetMountY + spoutHeight × tan(angle)`. This
 is still not ballistic physics (no gravity integration, no velocity) — just
 a linear geometric extrapolation of "the jet exits at this angle and this
 height, where does a straight line hit the bottom plane." It is always
 labeled `heuristic` in the UI and explanation panel, and defaults to 0°
 (reducing exactly to the original formula) rather than a fabricated typical
 value, since no source publishes a typical angle either.
+
+### 2.1 Vertical rim clearance — a second, independent failure mode
+
+Horizontal placement being correct doesn't mean the water can physically
+get there. Under the simplified spout-path model above (riser straight up
+to `spoutHeight`, then a horizontal run at that constant height, then a
+vertical drop at the outlet), the spout crosses over the basin's rear wall
+at a constant height equal to `spoutHeight` above the countertop. **If that
+height is at or below the basin's own rim height, the spout body physically
+presses against the outside of the basin instead of clearing over the
+top** — regardless of how good the horizontal reach is. A low-profile
+faucet on a tall vessel/countertop basin can pass every horizontal check
+and still be unusable; nothing in §2's formula alone would catch that. This
+is a real finding from the catalog data, not a hypothetical: hansgrohe
+Logis 70 (spout height 67mm, first-party sourced) on Villeroy & Boch's
+Subway 3.0 as a countertop basin (own height 165mm, first-party sourced)
+fails this check — the spout is 98mm too short.
+
+`rimHeightMm` — the rim's height above the countertop — is **one
+user-editable value, never hardcoded by installation type**:
+
+- **0 means the rim sits flush with (or recessed below) the counter** — the
+  natural case for an inset/undermount bowl. The UI defaults new
+  inset/undermount selections to 0 only when the catalog doesn't already
+  know the basin's own height, and that default stays fully editable.
+- **A positive value means the basin sits that far above the counter** — a
+  lay-on/countertop or furniture-mounted basin, defaulting to the catalog's
+  `basin.height` when known.
+- A wall-mounted basin has no shared mounting surface with the faucet at
+  all (both are independently wall/floor-referenced), so the check reports
+  `unknown` for that installation type regardless of `rimHeightMm`.
+
+`evaluateRimClearance(spoutHeightMm, rimHeightMm)` in
+`src/geometry/geometry.ts`: `fail` if `spoutHeightMm <= rimHeightMm` (no
+margin — exact equality still fails, since the spout would graze the rim
+rather than clear it), `ok` otherwise, `unknown` if either input is
+missing. Its verdict is merged into the **geometry** axis (§4) — worst of
+the horizontal-containment verdict and this one — because both answer the
+same underlying question ("does the water physically get into the bowl?"),
+just on different axes; `CalculatorResult.clearance` also exposes it
+unmerged for the side-elevation diagram and explanation panel.
 
 ## 3. Target zone
 
@@ -146,7 +209,7 @@ checks, each with its own verdict (`ok` / `warning` / `fail` / `unknown`):
 
 | Axis | What it checks | Inputs | Can it fail hard? |
 |---|---|---|---|
-| **Geometry** | Does the computed landing point (§2) fall within the basin's bowl footprint at all? | `basin.width/depth`, `bowlWidth/bowlDepth` (if known), `landingY` | Yes — landing outside the bowl footprint is a hard geometric fail |
+| **Geometry** | Does the computed landing point (§2) fall within the basin's bowl footprint, AND does the spout clear the basin's rim (§2.1)? Two independent checks merged — worst verdict wins | `basin.width/depth`, `bowlWidth/bowlDepth` (if known), `landingY`, `spoutHeightMm`, `rimHeightMm` | Yes — either landing outside the bowl footprint or the spout not clearing the rim is a hard fail |
 | **Ergonomics** | Is the landing point within `target_zone` (§3)? Is `spoutHeight` within the comfort range or over the splash ceiling? | `target_zone`, `spoutHeight` heuristics | Warning only — heuristic-sourced, never `mandatory` |
 | **Standards** | Do basin height / faucet height / faucet-to-front-edge distance satisfy the *active jurisdiction profile's* `mandatory`/`recommended` rules from `standards.json`? | User-selected jurisdiction (`UA`/`DE`/`professional`), basin height, faucet-to-edge distance | Yes for `mandatory` rules in the active profile; `recommended` rules only warn |
 | **Manufacturer** | Does the faucet's model line have a stated ComfortZone/compatibility note for this basin? | `faucet.recommendedBasinModels` (currently `null` for all catalog entries — no manufacturer in the research published a cross-brand compatibility table) | Never fails — absence of data renders `unknown`, not a failure |
@@ -165,7 +228,8 @@ calculate(basin, faucet, installationType, jurisdictionProfile, overrides):
   2. compute landingY (§2, Assumption A) — flag `insufficient-data` if faucetMountY unknown
      and no override supplied
   3. compute target_zone (§3) from whichever layer has data
-  4. geometry axis: is landingY within [rearEdge, frontEdge] and within bowl width? (§4)
+  4. geometry axis: is landingY within [rearEdge, frontEdge] AND does spoutHeight clear
+     rimHeightMm (§2.1)? — worst of the two sub-verdicts, messages concatenated
   5. ergonomics axis: is landingY within target_zone? is spoutHeight in comfort range?
   6. standards axis: for each usedInEngine rule in the active jurisdiction —
      compare basin height / faucet-to-edge distance against rule.value {min,max,nominal}

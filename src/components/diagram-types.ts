@@ -13,6 +13,12 @@ export interface DiagramData {
   landingYMm: number | null
   targetZone: { minimumYMm: number | null; maximumYMm: number | null }
   geometryVerdict: Verdict
+  /** Rim height above the surface the faucet is mounted on — resolved for
+   *  installation type (basin's own height for countertop/furniture, ~0 for
+   *  inset/undermount, null/not-applicable for wall-mounted). See
+   *  evaluateRimClearance in src/geometry/geometry.ts. */
+  rimHeightMm: number | null
+  clearanceVerdict: Verdict
 }
 
 /** Visual-only fallback when bowlHeight is unknown; never used in calculations. */

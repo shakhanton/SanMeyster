@@ -56,7 +56,10 @@ function makeFaucet(overrides: Partial<Faucet> = {}): Faucet {
     productUrl: null,
     installationType: 'deck-mounted',
     totalHeight: null,
-    spoutHeight: sourced(150),
+    // 200mm clears the default test basin's own height (165mm) so tests
+    // not specifically about rim clearance aren't incidentally tripped by
+    // it — see the dedicated 'vertical rim clearance' describe block below.
+    spoutHeight: sourced(200),
     spoutProjection: sourced(110),
     outletHeight: null,
     outletPosition: null,
@@ -78,8 +81,9 @@ describe('landing point (real catalog data)', () => {
     const basin = getBasin('vb-subway-3-60')!
     const faucet = getFaucet('hansgrohe-logis-70')!
     const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
-    // spoutProjection 107mm (research/faucets-raw.md) + mount 10mm
-    expect(result.landingYMm).toBe(117)
+    // faucet mounts 10mm behind the rear edge; spoutProjection 107mm (research/faucets-raw.md)
+    // landingY = spoutProjection - faucetMountY = 107 - 10 = 97
+    expect(result.landingYMm).toBe(97)
   })
 })
 
@@ -96,6 +100,14 @@ describe('boundary values', () => {
     const faucet = makeFaucet({ spoutProjection: sourced(301) })
     const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 0, installedBasinHeightMm: 800 })
     expect(result.geometry.verdict).toBe('fail')
+  })
+
+  it('treats a faucet setback larger than the spout reach as a geometric fail (never reaches the basin)', () => {
+    const basin = makeBasin({ depth: sourced(400) })
+    const faucet = makeFaucet({ spoutProjection: sourced(80) })
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 150, installedBasinHeightMm: 800 })
+    expect(result.geometry.verdict).toBe('fail')
+    expect(result.landingYMm).toBeLessThan(0)
   })
 })
 
@@ -123,7 +135,7 @@ describe('different spout projections', () => {
     const focusResult = calculate({ basin, faucet: focus, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
     const logisResult = calculate({ basin, faucet: logis, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
     expect(focusResult.landingYMm).not.toBe(logisResult.landingYMm)
-    expect(focusResult.landingYMm).toBe(129)
+    expect(focusResult.landingYMm).toBe(109) // 119 - 10
   })
 })
 
@@ -143,9 +155,18 @@ describe('installation types', () => {
     const basin = getBasin('vb-subway-3-60')!
     expect(basin.installationType).toBe('countertop')
     const faucet = getFaucet('hansgrohe-logis-100')!
-    // Subway 3.0's own bowlDepth (120mm, confidence C) is the binding constraint here,
-    // not the outer footprint — mount position kept small so 5 + 108mm projection fits.
-    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 5, installedBasinHeightMm: 800 })
+    // Isolate horizontal containment from the (real, separately-tested) rim
+    // clearance concern for this exact pairing — see 'vertical rim
+    // clearance' below — with a low override so only containment is checked here.
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 5,
+      installedBasinHeightMm: 800,
+      basinRimHeightOverrideMm: 50,
+    })
     expect(result.geometry.verdict).toBe('ok')
   })
 
@@ -153,8 +174,85 @@ describe('installation types', () => {
     const basin = getBasin('vb-architectura-built-in-60')!
     expect(basin.installationType).toBe('inset')
     const faucet = getFaucet('hansgrohe-focus-100')!
-    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 15, installedBasinHeightMm: 800 })
+    // Isolate horizontal containment from the rim-clearance concern (this
+    // basin's real 170mm height vs. this faucet's real 94mm spout height
+    // fails clearance — see 'vertical rim clearance' below) with an
+    // explicit flush override, since rim height is never hardcoded by
+    // installation type any more.
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 15,
+      installedBasinHeightMm: 800,
+      basinRimHeightOverrideMm: 0,
+    })
     expect(result.geometry.verdict).toBe('ok')
+  })
+})
+
+describe('vertical rim clearance', () => {
+  it('real pairing: hansgrohe Logis 70 (67mm spout) cannot clear Villeroy & Boch Subway 3.0 (165mm, countertop)', () => {
+    const basin = getBasin('vb-subway-3-60')!
+    const faucet = getFaucet('hansgrohe-logis-70')!
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    expect(result.clearance.verdict).toBe('fail')
+    expect(result.geometry.verdict).toBe('fail') // merged into the geometry axis
+  })
+
+  it('is ok even with horizontal containment ok when spout height exceeds the rim height', () => {
+    const basin = makeBasin({ height: sourced(165) })
+    const faucet = makeFaucet({ spoutHeight: sourced(200) })
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    expect(result.clearance.verdict).toBe('ok')
+  })
+
+  it('rim height is one unified, user-editable value for every installation type — never hardcoded by type', () => {
+    // An inset basin still uses its own (catalog or overridden) height for
+    // the check, same as any other type — 0 = flush is a UI *default* for
+    // inset/undermount when the catalog has no height, not an engine rule.
+    const basin = makeBasin({ installationType: 'inset', height: sourced(200) })
+    const faucet = makeFaucet({ spoutHeight: sourced(60) })
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    expect(result.clearance.verdict).toBe('fail') // 60mm does not clear 200mm
+  })
+
+  it('an explicit 0mm override (rim flush with the counter) passes regardless of installation type', () => {
+    const basin = makeBasin({ installationType: 'inset', height: sourced(200) })
+    const faucet = makeFaucet({ spoutHeight: sourced(60) })
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 10,
+      installedBasinHeightMm: 800,
+      basinRimHeightOverrideMm: 0,
+    })
+    expect(result.clearance.verdict).toBe('ok')
+  })
+
+  it('does not evaluate clearance for wall-mounted basins (no shared mounting surface)', () => {
+    const basin = makeBasin({ installationType: 'wall-mounted', height: sourced(165) })
+    const faucet = makeFaucet({ spoutHeight: sourced(60) })
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    expect(result.clearance.verdict).toBe('unknown')
+  })
+
+  it('a user override for rim height changes the clearance verdict', () => {
+    const basin = getBasin('vb-subway-3-60')!
+    const faucet = getFaucet('hansgrohe-logis-70')!
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 10,
+      installedBasinHeightMm: 800,
+      basinRimHeightOverrideMm: 50, // lower than the real 165mm
+    })
+    expect(result.clearance.verdict).toBe('ok')
   })
 })
 
@@ -197,15 +295,26 @@ describe('standards conflicts / jurisdiction profiles are not mixed', () => {
     expect(fail.standards.verdict).toBe('fail')
   })
 
-  it('DE accessible profile (≤800mm) accepts 800mm and rejects 850mm — independently of the UA profile', () => {
-    const basin = makeBasin() // outer depth 470mm
+  it('DE accessible profile (≤400mm) accepts a front distance at the limit and rejects over it — independently of the UA profile', () => {
+    // Front distance = basin depth + faucet setback (faucet mounts behind
+    // the rear edge — see src/geometry/geometry.ts). A 350mm-deep basin
+    // with the faucet flush (0mm setback) sits exactly at 350mm, well
+    // under DE's 400mm accessible limit; only basinHeight varies below so
+    // this isolates that boundary.
+    const basin = makeBasin({ depth: sourced(350) })
     const faucet = makeFaucet()
-    // faucetMountYMm: 100 keeps the DE ≤400mm faucet-to-front-edge accessible rule
-    // satisfied (470-100=370mm) so this test isolates the basin-height boundary only.
-    const atLimit = calculate({ basin, faucet, jurisdiction: 'DE', accessible: true, faucetMountYMm: 100, installedBasinHeightMm: 800 })
-    const overLimit = calculate({ basin, faucet, jurisdiction: 'DE', accessible: true, faucetMountYMm: 100, installedBasinHeightMm: 850 })
+    const atLimit = calculate({ basin, faucet, jurisdiction: 'DE', accessible: true, faucetMountYMm: 0, installedBasinHeightMm: 800 })
+    const overLimit = calculate({ basin, faucet, jurisdiction: 'DE', accessible: true, faucetMountYMm: 0, installedBasinHeightMm: 850 })
     expect(atLimit.standards.verdict).toBe('ok')
     expect(overLimit.standards.verdict).toBe('fail')
+  })
+
+  it('DE accessible front-distance rule fails once the basin depth alone exceeds 400mm, regardless of faucet setback', () => {
+    const basin = makeBasin({ depth: sourced(470) }) // depth alone already exceeds 400mm
+    const faucet = makeFaucet()
+    const result = calculate({ basin, faucet, jurisdiction: 'DE', accessible: true, faucetMountYMm: 0, installedBasinHeightMm: 800 })
+    const distanceCheck = result.standards.checks.find((c) => c.rule.id === 'de-faucet-max-front-distance')
+    expect(distanceCheck?.pass).toBe(false)
   })
 
   it('does not apply the documented-but-unused legacy UA accessible rule (500mm) — it is excluded from the engine', () => {
@@ -247,7 +356,7 @@ describe('editable characteristic overrides', () => {
       installedBasinHeightMm: 800,
       spoutProjectionOverrideMm: 200,
     })
-    expect(result.landingYMm).toBe(210) // 10 + 200, not the catalog 107mm
+    expect(result.landingYMm).toBe(190) // 200 - 10, not the catalog 107mm
   })
 
   it('flags data quality when a characteristic has been overridden', () => {
@@ -283,11 +392,11 @@ describe('editable characteristic overrides', () => {
 })
 
 describe('jet angle (heuristic, user-supplied)', () => {
-  it('defaults to 0 degrees (straight down) and matches the original landing formula', () => {
+  it('defaults to 0 degrees (straight down) and matches the base landing formula', () => {
     const basin = getBasin('vb-subway-3-60')!
     const faucet = getFaucet('hansgrohe-logis-70')!
     const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
-    expect(result.landingYMm).toBe(117) // 10 + 107, unchanged by the new parameter
+    expect(result.landingYMm).toBe(97) // 107 - 10, unchanged by the new parameter
   })
 
   it('a non-zero jet angle shifts the landing point and is flagged in data quality + explanation', () => {

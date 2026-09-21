@@ -77,6 +77,10 @@ export default function CalculatorPage() {
   // or approximate, and the user's actual fixture is the source of truth.
   const [basinWidthOverride, setBasinWidthOverride] = useState<number | null>(null)
   const [basinDepthOverride, setBasinDepthOverride] = useState<number | null>(null)
+  // The basin's OWN physical height (rim above its base/the mounting
+  // surface) — distinct from `basinHeight` below, which is the
+  // floor-to-rim installation height used for the ДБН/DIN standards check.
+  const [basinRimHeightOverride, setBasinRimHeightOverride] = useState<number | null>(null)
   const [spoutProjectionOverride, setSpoutProjectionOverride] = useState<number | null>(null)
   const [spoutHeightOverride, setSpoutHeightOverride] = useState<number | null>(null)
   // Jet angle has no catalog value at all — no researched source publishes
@@ -103,7 +107,14 @@ export default function CalculatorPage() {
     const catalogDepth = basin.bowlDepth?.value ?? basin.depth?.value ?? null
     setBasinWidthOverride(basin.width?.value ?? null)
     setBasinDepthOverride(catalogDepth)
-    setFaucetMountY((prev) => Math.min(prev, catalogDepth ?? 400))
+    // 0 = rim flush/recessed with the countertop — the natural default for
+    // inset/undermount when the catalog doesn't know the basin's own
+    // height; always user-editable afterward, never hardcoded past this.
+    const defaultRimHeight =
+      basin.height?.value ?? (basin.installationType === 'inset' || basin.installationType === 'undermount' ? 0 : null)
+    setBasinRimHeightOverride(defaultRimHeight)
+    // faucetMountY is the gap behind the basin (toward the wall), not
+    // inside it — independent of bowl depth, so no clamp against it here.
   }, [basin])
 
   useEffect(() => {
@@ -113,7 +124,9 @@ export default function CalculatorPage() {
     setJetAngleDeg(0)
   }, [faucet])
 
-  const effectiveBowlDepth = basinDepthOverride ?? 400
+  // Faucet mount is a countertop gap behind the basin — not bounded by
+  // bowl depth. 300mm covers realistic vanity/counter depths behind a basin.
+  const MAX_FAUCET_SETBACK_MM = 300
 
   const basinOptions = useMemo(() => searchBasins({ brand: basinBrand || undefined }), [basinBrand])
   const faucetOptions = useMemo(() => searchFaucets({ brand: faucetBrand || undefined }), [faucetBrand])
@@ -128,11 +141,24 @@ export default function CalculatorPage() {
       faucetMountYMm: faucetMountY,
       installedBasinHeightMm: basinHeight,
       basinDepthOverrideMm: basinDepthOverride,
+      basinRimHeightOverrideMm: basinRimHeightOverride,
       spoutProjectionOverrideMm: spoutProjectionOverride,
       spoutHeightOverrideMm: spoutHeightOverride,
       jetAngleDeg,
     })
-  }, [basin, faucet, jurisdiction, accessible, faucetMountY, basinHeight, basinDepthOverride, spoutProjectionOverride, spoutHeightOverride, jetAngleDeg])
+  }, [
+    basin,
+    faucet,
+    jurisdiction,
+    accessible,
+    faucetMountY,
+    basinHeight,
+    basinDepthOverride,
+    basinRimHeightOverride,
+    spoutProjectionOverride,
+    spoutHeightOverride,
+    jetAngleDeg,
+  ])
 
   return (
     <div className="space-y-8">
@@ -252,6 +278,22 @@ export default function CalculatorPage() {
                   unit="мм"
                   onChange={setBasinDepthOverride}
                 />
+                <div>
+                  <EditableNumberField
+                    label="Висота раковини (борт над стільницею)"
+                    value={basinRimHeightOverride}
+                    catalogValue={basin.height?.value ?? null}
+                    unit="мм"
+                    onChange={setBasinRimHeightOverride}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">0 мм = борт врівень зі стільницею (втоплена/врізна).</p>
+                  {basin.installationType === 'wall-mounted' && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Перевірка вертикального зазору не застосовується до настінного встановлення — немає спільної
+                      стільниці зі змішувачем.
+                    </p>
+                  )}
+                </div>
               </>
             )}
             {faucet && (
@@ -300,13 +342,14 @@ export default function CalculatorPage() {
             <input
               type="range"
               min={0}
-              max={Math.round(effectiveBowlDepth)}
+              max={MAX_FAUCET_SETBACK_MM}
               value={faucetMountY}
               onChange={(e) => setFaucetMountY(Number(e.target.value))}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">
-              Жоден виробник у дослідженні не публікує цю відстань — вкажіть її за фактичним кресленням.
+              Змішувач стоїть на стільниці за раковиною, між заднім краєм і стіною — жоден виробник у
+              дослідженні не публікує цю відстань, вкажіть її за фактичним кресленням.
             </p>
           </div>
           <div>
@@ -391,6 +434,8 @@ function CalculatorResult({
           landingYMm={result.landingYMm}
           targetZone={result.targetZone}
           geometryVerdict={result.geometry.verdict}
+          rimHeightMm={result.resolvedRimHeightMm}
+          clearanceVerdict={result.clearance.verdict}
         />
       </div>
 
