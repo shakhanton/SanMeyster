@@ -22,7 +22,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # jsdom 30 / undici require Node >=22.22.2 (engines field) — keep in
+          # sync with that constraint, not an arbitrary LTS pin.
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
