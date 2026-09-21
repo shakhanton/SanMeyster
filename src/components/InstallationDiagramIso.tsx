@@ -48,7 +48,9 @@ export default function InstallationDiagramIso({
   const p = (x: number, y: number, z: number) => project(x, y, z).join(',')
 
   const centerX = W / 2
-  const drainY = D * 0.62
+  // Drain position is unknown for every catalog model — shown centered
+  // (most wash basins have a center drain), dashed, labeled as unverified.
+  const drainY = D * 0.5
   const mountY = faucetMountYMm
   const landingY = landingYMm
   const color = verdictColor[geometryVerdict]

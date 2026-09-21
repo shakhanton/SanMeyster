@@ -216,3 +216,87 @@ describe('standards conflicts / jurisdiction profiles are not mixed', () => {
     expect(usedLegacyRule).toBe(false)
   })
 })
+
+describe('editable characteristic overrides', () => {
+  it('a user-edited basin depth changes the geometry verdict, overriding the catalog value', () => {
+    const basin = makeBasin({ depth: sourced(300) })
+    const faucet = makeFaucet({ spoutProjection: sourced(320) })
+    const withoutOverride = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 0, installedBasinHeightMm: 800 })
+    const withOverride = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 0,
+      installedBasinHeightMm: 800,
+      basinDepthOverrideMm: 500,
+    })
+    expect(withoutOverride.geometry.verdict).toBe('fail') // 320mm > 300mm bowl depth
+    expect(withOverride.geometry.verdict).toBe('ok') // 320mm <= 500mm overridden depth
+  })
+
+  it('a user-edited spout projection changes the landing point', () => {
+    const basin = getBasin('vb-subway-3-60')!
+    const faucet = getFaucet('hansgrohe-logis-70')!
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 10,
+      installedBasinHeightMm: 800,
+      spoutProjectionOverrideMm: 200,
+    })
+    expect(result.landingYMm).toBe(210) // 10 + 200, not the catalog 107mm
+  })
+
+  it('flags data quality when a characteristic has been overridden', () => {
+    const basin = makeBasin()
+    const faucet = makeFaucet()
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 10,
+      installedBasinHeightMm: 800,
+      spoutHeightOverrideMm: 999,
+    })
+    expect(result.dataQuality.verdict).toBe('warning')
+    expect(result.dataQuality.caveats.some((c) => c.includes('відредаговані вручну'))).toBe(true)
+  })
+
+  it('does not flag an override caveat when the "override" equals the catalog value', () => {
+    const basin = makeBasin({ depth: sourced(470) })
+    const faucet = makeFaucet()
+    const result = calculate({
+      basin,
+      faucet,
+      jurisdiction: 'UA',
+      accessible: false,
+      faucetMountYMm: 10,
+      installedBasinHeightMm: 800,
+      basinDepthOverrideMm: 470, // same as catalog value
+    })
+    expect(result.dataQuality.caveats.some((c) => c.includes('відредаговані вручну'))).toBe(false)
+  })
+})
+
+describe('jet angle (heuristic, user-supplied)', () => {
+  it('defaults to 0 degrees (straight down) and matches the original landing formula', () => {
+    const basin = getBasin('vb-subway-3-60')!
+    const faucet = getFaucet('hansgrohe-logis-70')!
+    const result = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    expect(result.landingYMm).toBe(117) // 10 + 107, unchanged by the new parameter
+  })
+
+  it('a non-zero jet angle shifts the landing point and is flagged in data quality + explanation', () => {
+    const basin = getBasin('vb-subway-3-60')!
+    const faucet = getFaucet('hansgrohe-logis-70')!
+    const straight = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800 })
+    const angled = calculate({ basin, faucet, jurisdiction: 'UA', accessible: false, faucetMountYMm: 10, installedBasinHeightMm: 800, jetAngleDeg: 30 })
+    expect(angled.landingYMm).not.toBe(straight.landingYMm)
+    expect(angled.dataQuality.verdict).toBe('warning')
+    expect(angled.explanation.some((e) => e.label.includes('Кут струменя'))).toBe(true)
+  })
+})

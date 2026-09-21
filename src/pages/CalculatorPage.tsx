@@ -13,6 +13,52 @@ const selectClass =
   'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400'
 const labelClass = 'block text-sm font-medium text-slate-700 mb-1'
 
+function EditableNumberField({
+  label,
+  value,
+  catalogValue,
+  unit,
+  onChange,
+  min = 0,
+  max = 2000,
+}: {
+  label: string
+  value: number | null
+  catalogValue: number | null
+  unit: string
+  onChange: (v: number | null) => void
+  min?: number
+  max?: number
+}) {
+  const isOverridden = value != null && catalogValue != null && value !== catalogValue
+
+  return (
+    <div>
+      <label className={labelClass}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          className={selectClass}
+          value={value ?? ''}
+          min={min}
+          max={max}
+          placeholder={catalogValue == null ? 'невідомо' : undefined}
+          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        />
+        <span className="text-xs text-slate-400 whitespace-nowrap">{unit}</span>
+      </div>
+      <p className="text-xs text-slate-400 mt-1">
+        {catalogValue != null ? `з каталогу: ${catalogValue} ${unit}` : 'у каталозі невідомо — введіть вручну'}
+        {isOverridden && (
+          <button type="button" className="ml-2 underline hover:text-slate-600" onClick={() => onChange(catalogValue)}>
+            скинути
+          </button>
+        )}
+      </p>
+    </div>
+  )
+}
+
 export default function CalculatorPage() {
   const [searchParams] = useSearchParams()
 
@@ -26,6 +72,18 @@ export default function CalculatorPage() {
   const [faucetMountY, setFaucetMountY] = useState(20)
   const [basinHeight, setBasinHeight] = useState(800)
 
+  // Editable characteristics — pre-filled from the catalog when a model is
+  // selected, but always overridable: the catalog is frequently incomplete
+  // or approximate, and the user's actual fixture is the source of truth.
+  const [basinWidthOverride, setBasinWidthOverride] = useState<number | null>(null)
+  const [basinDepthOverride, setBasinDepthOverride] = useState<number | null>(null)
+  const [spoutProjectionOverride, setSpoutProjectionOverride] = useState<number | null>(null)
+  const [spoutHeightOverride, setSpoutHeightOverride] = useState<number | null>(null)
+  // Jet angle has no catalog value at all — no researched source publishes
+  // it for any faucet — so it always starts at 0 (straight down) and is
+  // purely a user what-if input.
+  const [jetAngleDeg, setJetAngleDeg] = useState(0)
+
   const basin = basinId ? getBasin(basinId) : undefined
   const faucet = faucetId ? getFaucet(faucetId) : undefined
 
@@ -37,16 +95,25 @@ export default function CalculatorPage() {
     if (faucet) setFaucetBrand(faucet.brand)
   }, [faucet])
 
-  const effectiveBowlDepth = basin ? (basin.bowlDepth?.value ?? basin.depth?.value ?? 400) : 400
-
-  // Reset dependent inputs to a sane default whenever the basin changes.
+  // Reset dependent inputs to catalog defaults whenever the basin changes.
   // Note: mounting height above the floor is an installation decision, independent
   // of the basin's own physical height dimension (basin.height) — never derived from it.
   useEffect(() => {
     if (!basin) return
-    setFaucetMountY((prev) => Math.min(prev, effectiveBowlDepth))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [basinId])
+    const catalogDepth = basin.bowlDepth?.value ?? basin.depth?.value ?? null
+    setBasinWidthOverride(basin.width?.value ?? null)
+    setBasinDepthOverride(catalogDepth)
+    setFaucetMountY((prev) => Math.min(prev, catalogDepth ?? 400))
+  }, [basin])
+
+  useEffect(() => {
+    if (!faucet) return
+    setSpoutProjectionOverride(faucet.spoutProjection?.value ?? null)
+    setSpoutHeightOverride(faucet.spoutHeight?.value ?? null)
+    setJetAngleDeg(0)
+  }, [faucet])
+
+  const effectiveBowlDepth = basinDepthOverride ?? 400
 
   const basinOptions = useMemo(() => searchBasins({ brand: basinBrand || undefined }), [basinBrand])
   const faucetOptions = useMemo(() => searchFaucets({ brand: faucetBrand || undefined }), [faucetBrand])
@@ -60,8 +127,12 @@ export default function CalculatorPage() {
       accessible,
       faucetMountYMm: faucetMountY,
       installedBasinHeightMm: basinHeight,
+      basinDepthOverrideMm: basinDepthOverride,
+      spoutProjectionOverrideMm: spoutProjectionOverride,
+      spoutHeightOverrideMm: spoutHeightOverride,
+      jetAngleDeg,
     })
-  }, [basin, faucet, jurisdiction, accessible, faucetMountY, basinHeight])
+  }, [basin, faucet, jurisdiction, accessible, faucetMountY, basinHeight, basinDepthOverride, spoutProjectionOverride, spoutHeightOverride, jetAngleDeg])
 
   return (
     <div className="space-y-8">
@@ -158,8 +229,69 @@ export default function CalculatorPage() {
         </section>
       </div>
 
+      {(basin || faucet) && (
+        <section className="bg-white border border-slate-200 rounded-lg p-4">
+          <h2 className="font-semibold text-slate-900 mb-1">3. Характеристики</h2>
+          <p className="text-xs text-slate-400 mb-3">
+            Підтягнуто з каталогу — перевірте та відредагуйте за фактичними виробами, якщо щось відрізняється.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {basin && (
+              <>
+                <EditableNumberField
+                  label="Ширина раковини"
+                  value={basinWidthOverride}
+                  catalogValue={basin.width?.value ?? null}
+                  unit="мм"
+                  onChange={setBasinWidthOverride}
+                />
+                <EditableNumberField
+                  label="Глибина раковини / чаші"
+                  value={basinDepthOverride}
+                  catalogValue={basin.bowlDepth?.value ?? basin.depth?.value ?? null}
+                  unit="мм"
+                  onChange={setBasinDepthOverride}
+                />
+              </>
+            )}
+            {faucet && (
+              <>
+                <EditableNumberField
+                  label="Виліт носика змішувача"
+                  value={spoutProjectionOverride}
+                  catalogValue={faucet.spoutProjection?.value ?? null}
+                  unit="мм"
+                  onChange={setSpoutProjectionOverride}
+                />
+                <EditableNumberField
+                  label="Висота виливу над бортом"
+                  value={spoutHeightOverride}
+                  catalogValue={faucet.spoutHeight?.value ?? null}
+                  unit="мм"
+                  onChange={setSpoutHeightOverride}
+                />
+                <div>
+                  <label className={labelClass}>Кут струменя від вертикалі: {jetAngleDeg}°</label>
+                  <input
+                    type="range"
+                    min={-60}
+                    max={60}
+                    value={jetAngleDeg}
+                    onChange={(e) => setJetAngleDeg(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Немає в жодного виробника — це ваше припущення. 0° = вода тече прямо вниз.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="bg-white border border-slate-200 rounded-lg p-4">
-        <h2 className="font-semibold text-slate-900 mb-3">3. Параметри монтажу</h2>
+        <h2 className="font-semibold text-slate-900 mb-3">4. Параметри монтажу</h2>
         <div className="grid sm:grid-cols-2 gap-6">
           <div>
             <label className={labelClass}>
@@ -210,7 +342,17 @@ export default function CalculatorPage() {
           Оберіть раковину та змішувач, щоб побачити результат.
         </div>
       ) : (
-        result && <CalculatorResult basin={basin} faucet={faucet} result={result} faucetMountY={faucetMountY} />
+        result && (
+          <CalculatorResult
+            basin={basin}
+            faucet={faucet}
+            result={result}
+            faucetMountY={faucetMountY}
+            basinWidthOverride={basinWidthOverride}
+            spoutHeightOverride={spoutHeightOverride}
+            spoutProjectionOverride={spoutProjectionOverride}
+          />
+        )
       )}
     </div>
   )
@@ -221,11 +363,17 @@ function CalculatorResult({
   faucet,
   result,
   faucetMountY,
+  basinWidthOverride,
+  spoutHeightOverride,
+  spoutProjectionOverride,
 }: {
   basin: NonNullable<ReturnType<typeof getBasin>>
   faucet: NonNullable<ReturnType<typeof getFaucet>>
   result: NonNullable<ReturnType<typeof calculate>>
   faucetMountY: number
+  basinWidthOverride: number | null
+  spoutHeightOverride: number | null
+  spoutProjectionOverride: number | null
 }) {
   const bowlDepthMm = basin.bowlDepth?.value ?? basin.depth?.value ?? null
 
@@ -233,13 +381,13 @@ function CalculatorResult({
     <section className="space-y-4">
       <div className="bg-white border border-slate-200 rounded-lg p-4">
         <InstallationDiagram
-          basinWidthMm={basin.width?.value ?? null}
+          basinWidthMm={basinWidthOverride ?? basin.width?.value ?? null}
           bowlWidthMm={basin.bowlWidth?.value ?? null}
           bowlDepthMm={bowlDepthMm}
           bowlHeightMm={basin.bowlHeight?.value ?? null}
           faucetMountYMm={faucetMountY}
-          spoutHeightMm={faucet.spoutHeight?.value ?? null}
-          spoutProjectionMm={faucet.spoutProjection?.value ?? null}
+          spoutHeightMm={spoutHeightOverride ?? faucet.spoutHeight?.value ?? null}
+          spoutProjectionMm={spoutProjectionOverride ?? faucet.spoutProjection?.value ?? null}
           landingYMm={result.landingYMm}
           targetZone={result.targetZone}
           geometryVerdict={result.geometry.verdict}

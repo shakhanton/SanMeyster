@@ -58,10 +58,11 @@ export default function InstallationDiagramPlan({
 
   const mountY = faucetMountYMm != null ? toY(faucetMountYMm) : null
   const landingY = landingYMm != null ? toY(landingYMm) : null
-  // Drain X/Y is unknown for every catalog model (research gap) — shown at
-  // a schematic point within the bowl footprint, dashed, explicitly labeled
-  // "position unknown" rather than implying a measured value.
-  const drainCenterY = toY(depthMm * 0.62)
+  // Drain X/Y is unknown for every catalog model (research gap). Shown at
+  // the geometric center of the bowl footprint — most wash basins are
+  // designed with a center drain — dashed and explicitly labeled "position
+  // unknown" rather than implying a measured value.
+  const drainCenterY = toY(depthMm * 0.5)
 
   const zoneMinY = targetZone.minimumYMm != null ? toY(Math.max(targetZone.minimumYMm, 0)) : null
   const zoneMaxY = targetZone.maximumYMm != null ? toY(Math.min(targetZone.maximumYMm, depthMm)) : null
@@ -127,7 +128,17 @@ export default function InstallationDiagramPlan({
         <g>
           <circle cx={centerX} cy={mountY} r={8} fill="#2563eb" />
           <circle cx={centerX} cy={mountY} r={13} fill="none" stroke="#2563eb" strokeWidth={1.5} opacity={0.4} />
-          <text x={centerX + 20} y={mountY + 4} textAnchor="start" fontSize={12} fontWeight={700} fill="#2563eb">
+          {/* Label placement: right-of-marker collides with the "СТІНА" wall
+              label when the mount is close to the rear edge, so drop below
+              the marker in that case instead. */}
+          <text
+            x={centerX + 20}
+            y={mountY - rearY < 28 ? mountY + 26 : mountY + 4}
+            textAnchor="start"
+            fontSize={12}
+            fontWeight={700}
+            fill="#2563eb"
+          >
             змішувач
           </text>
         </g>

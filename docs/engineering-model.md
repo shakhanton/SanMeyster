@@ -81,6 +81,18 @@ them apart — that data was not published by any researched manufacturer. The
 geometry/ergonomics verdicts below are therefore a **necessary, declared
 idealization**, not a CFD simulation.
 
+**User-adjustable jet angle.** The calculator exposes an optional exit-angle
+input (`jetAngleDeg`, degrees from vertical, default 0°) so a user who knows
+their actual fixture leans off-vertical can explore that what-if. It extends
+Assumption A with a straight-line drift term:
+`landingY = faucetMountY + spoutProjection + spoutHeight × tan(angle)`. This
+is still not ballistic physics (no gravity integration, no velocity) — just
+a linear geometric extrapolation of "the jet exits at this angle and this
+height, where does a straight line hit the bottom plane." It is always
+labeled `heuristic` in the UI and explanation panel, and defaults to 0°
+(reducing exactly to the original formula) rather than a fabricated typical
+value, since no source publishes a typical angle either.
+
 ## 3. Target zone
 
 `target_zone` is the Y-range (depth from rear edge) within which the landing
@@ -91,6 +103,10 @@ from three layers, most-specific first — never a single made-up constant:
    known for the specific basin, target zone is centered on it. In practice
    this is `null` for every model in the current catalog (see research §11)
    — this layer exists for when manufacturer CAD data becomes available.
+   The **diagrams** (not the compatibility calculation) still render a drain
+   marker in this case, at the geometric center of the bowl footprint —
+   most wash basins are designed with a center drain — always dashed and
+   labeled "position unknown," never presented as a measured value.
 2. **Heuristic industry-practice layer (used for the MVP):**
    `heuristic-target-zone-inset-min` (127 mm) /
    `heuristic-target-zone-inset-max` (254 mm) — "past the inner rim, toward

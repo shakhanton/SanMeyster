@@ -13,6 +13,14 @@ export interface GeometryInput {
   faucetMountYMm: number | null
   /** Faucet's horizontal reach from its mount, in mm. */
   spoutProjectionMm: number | null
+  /** Drop height from outlet to rim, mm. Only used to scale the jet-angle
+   *  drift below — optional because most callers don't need it. */
+  spoutHeightMm?: number | null
+  /** Jet exit angle from vertical, degrees; positive tilts toward the front
+   *  edge. No source publishes this for any researched faucet (see
+   *  docs/engineering-model.md §2) — it is always a user-supplied what-if
+   *  value, defaulting to 0 (straight down, Assumption A unchanged). */
+  jetAngleDeg?: number
 }
 
 export interface LandingPoint {
@@ -26,8 +34,19 @@ export interface LandingPoint {
  * water falls vertically from the outlet, so landingY = mount position +
  * spout projection. There is no sourced exit angle/velocity to integrate a
  * true trajectory from, so this is a placement, not a ballistic computation.
+ *
+ * `jetAngleDeg` extends this with an optional user-supplied "what if the
+ * stream isn't perfectly vertical" adjustment: a straight-line drift of
+ * `spoutHeightMm * tan(angle)`, added toward the front edge for a positive
+ * angle. This is a geometric extrapolation, not physics — it ignores
+ * gravity's acceleration and the jet's actual velocity (still unsourced for
+ * every researched faucet) — so it's only ever as good as the angle the
+ * user enters. Defaults to 0° (straight down), which reduces to the
+ * original formula exactly.
  */
-export function computeLandingPoint(input: Pick<GeometryInput, 'faucetMountYMm' | 'spoutProjectionMm'>): LandingPoint {
+export function computeLandingPoint(
+  input: Pick<GeometryInput, 'faucetMountYMm' | 'spoutProjectionMm' | 'spoutHeightMm' | 'jetAngleDeg'>,
+): LandingPoint {
   if (input.faucetMountYMm == null || input.spoutProjectionMm == null) {
     return {
       yMm: null,
@@ -35,7 +54,9 @@ export function computeLandingPoint(input: Pick<GeometryInput, 'faucetMountYMm' 
       reason: 'Невідома позиція кріплення змішувача або виліт носика — недостатньо даних для розрахунку точки падіння.',
     }
   }
-  return { yMm: input.faucetMountYMm + input.spoutProjectionMm, insufficientData: false, reason: null }
+  const angleRad = ((input.jetAngleDeg ?? 0) * Math.PI) / 180
+  const drift = (input.spoutHeightMm ?? 0) * Math.tan(angleRad)
+  return { yMm: input.faucetMountYMm + input.spoutProjectionMm + drift, insufficientData: false, reason: null }
 }
 
 export interface GeometryResult {

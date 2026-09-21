@@ -19,6 +19,27 @@ describe('computeLandingPoint', () => {
     expect(result.insufficientData).toBe(true)
     expect(result.yMm).toBeNull()
   })
+
+  it('defaults to straight-down (0deg) when jetAngleDeg is omitted, matching the original formula', () => {
+    const result = computeLandingPoint({ faucetMountYMm: 20, spoutProjectionMm: 108, spoutHeightMm: 150 })
+    expect(result.yMm).toBe(128)
+  })
+
+  it('adds forward drift for a positive jet angle, scaled by spout height', () => {
+    const result = computeLandingPoint({ faucetMountYMm: 20, spoutProjectionMm: 108, spoutHeightMm: 100, jetAngleDeg: 45 })
+    // tan(45deg) = 1, so drift = 100mm
+    expect(result.yMm).toBeCloseTo(228, 5)
+  })
+
+  it('adds backward drift for a negative jet angle', () => {
+    const result = computeLandingPoint({ faucetMountYMm: 100, spoutProjectionMm: 108, spoutHeightMm: 100, jetAngleDeg: -45 })
+    expect(result.yMm).toBeCloseTo(108, 5)
+  })
+
+  it('ignores jet angle when spout height is unknown (no drop height to scale drift by)', () => {
+    const result = computeLandingPoint({ faucetMountYMm: 20, spoutProjectionMm: 108, jetAngleDeg: 45 })
+    expect(result.yMm).toBe(128)
+  })
 })
 
 describe('evaluateGeometry', () => {
