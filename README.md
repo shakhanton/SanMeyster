@@ -1,32 +1,59 @@
-# React + TypeScript + Vite
+# SanMeyster
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Веб-застосунок для розрахунку правильного положення раковини відносно
+змішувача — перевіряє геометричну, ергономічну та нормативну сумісність
+на основі реальних моделей Geberit, Villeroy & Boch, GROHE та hansgrohe.
 
-Currently, two official plugins are available:
+Це інженерний інструмент, а не калькулятор із довільними числами: кожне
+використане значення має джерело (державний норматив, стандарт, офіційна
+документація виробника або явно позначена евристика). Невідомі параметри
+показані як `null`, а не вигадані.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Документація
 
-## React Compiler
+- [`docs/ergonomics-and-standards.md`](docs/ergonomics-and-standards.md) —
+  дослідницький звіт: українські ДБН, DIN 18040-2, NKBA, рекомендації
+  виробників, задокументовані конфлікти та прогалини в даних.
+- [`docs/engineering-model.md`](docs/engineering-model.md) — інженерна
+  модель: система координат, фізика струменя (і її обмеження), target zone,
+  алгоритм перевірки сумісності.
+- [`research/`](research/) — сирі дослідницькі нотатки (норми, каталог
+  раковин, каталог змішувачів) з посиланнями на першоджерела.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Розробка
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev       # dev-сервер
+npm run test      # unit tests (vitest)
+npm run lint      # oxlint
+npm run build     # production build
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Архітектура
+
+```
+src/
+  geometry/      # чиста геометрія (точка падіння, вміщення в чашу)
+  ergonomics/     # target zone, комфортна висота виливу
+  standards/      # оцінка нормативних профілів (UA / DE / professional)
+  calculator/     # оркестрація п'яти незалежних осей сумісності
+  catalog/        # пошук/фільтрація каталогу
+  data/           # типізовані дані: basins.json, faucets.json, standards.json
+  components/     # SVG-схема, картки результату, панель пояснення
+  pages/          # калькулятор, каталоги, сторінки моделей
+```
+
+Математичний двигун (`geometry`, `ergonomics`, `standards`, `calculator`) не
+залежить від UI та покритий unit-тестами.
+
+## Розгортання
+
+GitHub Actions (`.github/workflows/deploy.yml`) збирає, лінтить, тестує й
+деплоїть застосунок на GitHub Pages при пуші в `main`.
+
+## Дисклеймер
+
+Результат є інженерним розрахунком та рекомендацією. Остаточне рішення щодо
+монтажу необхідно приймати з урахуванням фактичних розмірів виробів,
+технічної документації виробника та чинних нормативних вимог.
